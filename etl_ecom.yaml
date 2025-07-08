@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation stack for Ecommerce ETL Project
+
+Resources:
+
+  ### S3 Buckets ###
+  RawDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: my-ecom-raw-data-12345
+
+  ProcessedDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: my-ecom-processed-data-12345
+
+  AthenaResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: my-ecom-athena-results-12345
+
+  ### DynamoDB Table ###
+  EcomProductsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: EcomProducts
+      AttributeDefinitions:
+        - AttributeName: ProductID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: ProductID
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  ### IAM Role for AWS Glue ###
+  GlueETLRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: GlueS3DynamoDBRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GlueS3DynamoPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::my-ecom-raw-data-12345
+                  - !Sub arn:aws:s3:::my-ecom-raw-data-12345/*
+                  - !Sub arn:aws:s3:::my-ecom-processed-data-12345
+                  - !Sub arn:aws:s3:::my-ecom-processed-data-12345/*
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:DescribeTable
+                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/EcomProducts
+              
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - glue:GetJob
+                  - glue:GetJobRun
+                  - glue:GetJobRuns
+                  - glue:StartJobRun
+                Resource: "*"
+
+  ### Glue Job ###
+  EcomETLGlueJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: EcomETLJob
+      Role: !GetAtt GlueETLRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: s3://my-ecom-raw-data-12345/scripts/ecom_etl_job.py
+        PythonVersion: 3
+      GlueVersion: "3.0"
+      MaxCapacity: 2.0
+      Timeout: 10
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+
+
