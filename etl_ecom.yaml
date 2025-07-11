@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CloudFormation stack for Ecommerce ETL Project
+Description: CloudFormation stack for ETL Project
 
 Resources:
 
@@ -29,6 +29,19 @@ Resources:
           AttributeType: S
       KeySchema:
         - AttributeName: ProductID
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  ### DynamoDB Table for transaction Dataset ###
+  SampleProductsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: transaction_data
+      AttributeDefinitions:
+        - AttributeName: KEY
+          AttributeType: S
+      KeySchema:
+        - AttributeName: KEY
           KeyType: HASH
       BillingMode: PAY_PER_REQUEST
 
@@ -80,9 +93,16 @@ Resources:
                   - glue:GetJobRun
                   - glue:GetJobRuns
                   - glue:StartJobRun
+                  - glue:CreateDatabase
+                  - glue:GetDatabase
+                  - glue:GetTable
+                  - glue:CreateTable
+                  - glue:UpdateTable
+                  - glue:GetPartitions
+                  - glue:BatchCreatePartition
                 Resource: "*"
 
-  ### Glue Job ###
+  ### Glue Job for ecommerce dataset ###
   EcomETLGlueJob:
     Type: AWS::Glue::Job
     Properties:
@@ -97,5 +117,44 @@ Resources:
       Timeout: 10
       ExecutionProperty:
         MaxConcurrentRuns: 1
+  
 
+  ### Glue Job for transaction Dataset 
+  SampleETLGlueJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: TransactionDataETLJob
+      Role: !GetAtt GlueETLRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: s3://my-ecom-raw-data-12345/scripts/transaction_etl_script.py
+        PythonVersion: 3
+      GlueVersion: "3.0"
+      MaxCapacity: 2.0
+      Timeout: 10
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+
+  ### Glue Catalog
+  TransactionCatalogDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref "AWS::AccountId"
+      DatabaseInput:
+        Name: transaction_catalog
+
+  ### Glue Crawler
+  TransactionDataCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: transaction-data-crawler
+      Role: !GetAtt GlueETLRole.Arn
+      DatabaseName: transaction_catalog
+      Targets:
+        S3Targets:
+          - Path: s3://my-ecom-processed-data-12345/transaction-data-cleaned/
+      TablePrefix: ""
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: LOG
 
